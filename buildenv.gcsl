@@ -2,7 +2,7 @@
 # the usual places, `/bin/sh`, `make`, `sed` and the rest, and its rule for
 # running one.
 #
-# - `Toolchain::BuildEnv`: a build environment, an `Env`: `root`, a
+# - `Toolchain::BuildEnv`: a build environment, a `BuildEnv`: `root`, a
 #   directory whose tools run as its programs' `/`, `/` for the host's own.
 #   A workspace registers one in `pekitconf` beside its C toolchains.
 # - `busybox_x86_64`: a pinned environment for x86-64 Linux: a static
@@ -14,7 +14,8 @@
 # - `configure_make(src, configure, make)`: the directory an upstream
 #   `./configure && make && make install` installs into, run as one
 #   hermetic step on the source `src`, `configure` given to `./configure`
-#   after `--prefix` and `make` to `make`. It is given the C toolchain and
+#   after `--prefix` and `make` to `make`, each word one argument as it is
+#   written, quoted for the shell. It is given the C toolchain and
 #   the environment as arguments, resolved as any rule's are, and the
 #   toolchain's tools as `CC`, `AR`, `RANLIB` and `LD`. In a pinned
 #   environment it runs in a sandbox of the environment, the toolchain's
@@ -29,9 +30,9 @@ import toolchain
 import Toolchain from toolchain
 import * from "github.com/gcslib/gcc"
 
-type Env = {root: Dir}
+type BuildEnv = {root: Dir}
 
-enum Toolchain::BuildEnv<Env>
+enum Toolchain::BuildEnv<BuildEnv>
 
 let BUSYBOX = "https://busybox.net/downloads/binaries/1.35.0-x86_64-linux-musl/busybox"
 
@@ -68,10 +69,10 @@ def configure_make(
     configure: List<String> = [],
     make: List<String> = [],
     cchain: toolchain.CToolchain = toolchain.get(Toolchain::C),
-    env: Env = toolchain.get(Toolchain::BuildEnv),
+    env: BuildEnv = toolchain.get(Toolchain::BuildEnv),
 ) -> Dir {
-    let words = configure.join(" ")
-    let jobs = make.join(" ")
+    let words = quoted(configure)
+    let jobs = quoted(make)
     if env.root.path == "/" {
         let out = dir("out")
         let script = "cp -R {src.path} src && chmod -R u+w src && cd src \
@@ -90,6 +91,12 @@ def configure_make(
                   && ./configure --prefix={OUT} {words} && make {jobs} && make install"
     let ran = box.exec("/bin/sh", "-c", script)
     = box.dir(OUT)
+}
+
+# `words`, each quoted for the shell, joined by spaces: so that a word with
+# a space or a quote in it is one argument, as written.
+fn quoted(words: List<String>) -> String {
+    = (for word in words { = "'{word.split("'").join("'\\''")}'" }).join(" ")
 }
 
 # The environment a build system's commands get: the toolchain `cchain`'s
