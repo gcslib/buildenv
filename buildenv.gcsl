@@ -17,8 +17,11 @@
 #   after `--prefix` and `make` to `make`, each word one argument as it is
 #   written, quoted for the shell. It is given the C toolchain and
 #   the environment as arguments, resolved as any rule's are, and the
-#   toolchain's tools as `CC`, `AR`, `RANLIB` and `LD`. In a pinned
-#   environment it runs in a sandbox of the environment, the toolchain's
+#   toolchain's tools as `CC`, `AR`, `RANLIB`, `OBJCOPY` and `LD`. Each
+#   static archive it installs is made deterministic with `objcopy -D`, its
+#   members' times, owners and modes zeroed, so the same source gives the
+#   same archive. In a pinned environment it runs in a sandbox of the
+#   environment, the toolchain's
 #   runtime, its install at `/opt/cc` and the source at `/work/src-in`,
 #   copied to `/work/src` and made writable, as a build system expects of
 #   its source, installing into `/work/out`, the same paths on every run,
@@ -76,7 +79,8 @@ def configure_make(
     if env.root.path == "/" {
         let out = dir("out")
         let script = "cp -R {src.path} src && chmod -R u+w src && cd src \
-                      && ./configure --prefix={out.path} {words} && make {jobs} && make install"
+                      && ./configure --prefix={out.path} {words} && make {jobs} && make install \
+                      && {deterministic(out.path)}"
         let ran = exec(["/bin/sh", "-c", script], env = tools(cchain, cchain.root.path))
         return out
     }
@@ -88,7 +92,8 @@ def configure_make(
     ]
     let box = fs.compose(placed).sandbox(cwd = "/work", env = tools(cchain, OPT))
     let script = "mkdir -p /tmp && cp -R {SRC_IN} {SRC} && chmod -R u+w {SRC} && cd {SRC} \
-                  && ./configure --prefix={OUT} {words} && make {jobs} && make install"
+                  && ./configure --prefix={OUT} {words} && make {jobs} && make install \
+                  && {deterministic(OUT)}"
     let ran = box.exec("/bin/sh", "-c", script)
     = box.dir(OUT)
 }
@@ -107,10 +112,16 @@ fn tools(cchain: toolchain.CToolchain, at: String) -> {*: String} {
     CC = placed(cchain.cc)
     AR = placed(cchain.ar)
     RANLIB = ranlib(placed(cchain.ar))
+    OBJCOPY = objcopy(placed(cchain.ar))
     LD = placed(cchain.ld)
     PATH = "/bin:/usr/bin:/sbin:/usr/sbin"
     TMPDIR = "/tmp"
     HOME = "/tmp"
+}
+
+# The `objcopy` beside the `ar` at `ar`, as binutils installs them.
+fn objcopy(ar: String): String {
+    = if ar.ends_with("ar") { "{ar.strip_suffix("ar")}objcopy" } else { "objcopy" }
 }
 
 # The `ranlib` beside the `ar` at `ar`, as binutils installs them.
@@ -149,4 +160,12 @@ fn assemble(busybox: File, make_src: Dir, cchain: toolchain.CToolchain) -> Dir {
          --disable-nls LDFLAGS=-static && ./build.sh && cp make /env/usr/bin/make",
     )
     = box.dir("/env")
+}
+
+# The shell command that makes each static archive under the directory
+# `at` deterministic: rewritten by `objcopy -D`, every member's time, owner
+# and mode zeroed, since a build system's `ar` records them unless told not
+# to, and a package's own Makefile rarely does.
+fn deterministic(at: String): String {
+    = "find {at} -name '*.a' -type f -exec \"$OBJCOPY\" -D '{{}}' ';'"
 }
