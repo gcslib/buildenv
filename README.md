@@ -39,7 +39,9 @@ def build zlib() {
   busybox and GNU make, so that a build reads nothing of the host.
 - `host_tools`: the host's own tools instead.
 - `configure_make(src, configure, make)`: what an upstream build installs,
-  built with the registered C toolchain and environment.
+  built with the registered C toolchain and environment. Every file of the
+  source is given one time first, so `make` never tries to regenerate a
+  file that a release ships.
 
 It needs the [gcc](https://github.com/gcslib/gcc) library.
 

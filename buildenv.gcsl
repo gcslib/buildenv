@@ -24,9 +24,17 @@
 #   environment, the toolchain's
 #   runtime, its install at `/opt/cc` and the source at `/work/src-in`,
 #   copied to `/work/src` and made writable, as a build system expects of
-#   its source, installing into `/work/out`, the same paths on every run,
+#   its source, every file of it given one time (`SOURCE_TIME`), installing
+#   into `/work/out`, the same paths on every run,
 #   so that what an install records of them is the same too; in the host's,
-#   in the step itself.
+#   in the step itself, its copy given the one time too. A source's times
+#   are not its own: the store keeps each file's from when it was first
+#   stored, and a copy each file's from when it was copied, so a generated
+#   file, a `configure` or a `Makefile.in` a release ships, could seem
+#   older than what it was generated from, and `make` try to generate it
+#   again with tools, `automake` or `makeinfo`, the build was never meant
+#   to need. One time for every file makes each up to date, as it was
+#   released.
 import fs
 import unpack from archive
 import toolchain
@@ -64,6 +72,9 @@ let SRC = "/work/src"
 
 let SRC_IN = "/work/src-in"
 
+# The time every file of a source is given, for `touch -d`.
+let SOURCE_TIME = "2000-01-01 00:00:00"
+
 let OUT = "/work/out"
 
 #[hermetic]
@@ -78,7 +89,7 @@ def configure_make(
     let jobs = quoted(make)
     if env.root.path == "/" {
         let out = working_dir().dir("out")
-        let script = "cp -R {src.path} src && chmod -R u+w src && cd src \
+        let script = "cp -R {src.path} src && chmod -R u+w src && {timed("src")} && cd src \
                       && ./configure --prefix={out.path} {words} && make {jobs} && make install \
                       && {deterministic(out.path)}"
         let ran = exec(["/bin/sh", "-c", script], env = tools(cchain, cchain.root.path))
@@ -91,7 +102,7 @@ def configure_make(
         {at = SRC_IN; place = src},
     ]
     let box = fs.compose(placed).sandbox(cwd = "/work", env = tools(cchain, OPT))
-    let script = "mkdir -p /tmp && cp -R {SRC_IN} {SRC} && chmod -R u+w {SRC} && cd {SRC} \
+    let script = "mkdir -p /tmp && cp -R {SRC_IN} {SRC} && chmod -R u+w {SRC} && {timed(SRC)} && cd {SRC} \
                   && ./configure --prefix={OUT} {words} && make {jobs} && make install \
                   && {deterministic(OUT)}"
     let ran = box.exec("/bin/sh", "-c", script)
@@ -117,6 +128,12 @@ fn tools(cchain: toolchain.CToolchain, at: String) -> {*: String} {
     PATH = "/bin:/usr/bin:/sbin:/usr/sbin"
     TMPDIR = "/tmp"
     HOME = "/tmp"
+}
+
+# The shell command that gives every file under `dir`, links themselves
+# and not what they name, the time `SOURCE_TIME`.
+fn timed(dir: String): String {
+    = "find {dir} -exec touch -h -d '{SOURCE_TIME}' {{}} +"
 }
 
 # The `objcopy` beside the `ar` at `ar`, as binutils installs them.
