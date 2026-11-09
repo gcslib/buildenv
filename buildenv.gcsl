@@ -35,6 +35,28 @@
 #   again with tools, `automake` or `makeinfo`, the build was never meant
 #   to need. One time for every file makes each up to date, as it was
 #   released.
+# - `has_tools(root)`: whether the directory `root` has tools of its own:
+#   a shell at `bin/sh`, as a system's root does, one composed for a
+#   build from a distribution's packages say, and Bootlin's sysroot
+#   doesn't.
+# - `base(env, runtime)`: what a sandbox has at `/` for a build in the
+#   environment `env` that runs on `runtime`, a C toolchain's runtime: the
+#   runtime, and the environment's root over it, unless the runtime has
+#   tools of its own. Such a root has its own shell, `make`, `env` and the
+#   rest where the environment has its, so the two can't both be placed,
+#   and the build takes the root's: they are what its compiler was built
+#   with. `configure_make` uses it, and so should any rule that places an
+#   environment and a C toolchain together.
+# - `shell(env, runtime)`: the environment's `/bin`, its shell and the
+#   usual tools, placed at `/bin`, for a sandbox of `runtime` that needs
+#   only those, a test's say; none if the runtime has its own.
+# - `bin_path(runtime)`: the system's part of a `PATH` for a sandbox of
+#   `runtime`, `/bin:/usr/bin`, after `/usr/libexec/coreutils-build` if the
+#   runtime has it. A Peios build root keeps GNU coreutils' commands there,
+#   to come first: Peios's own, peiosutils', differ from POSIX's and have no
+#   `chmod`, `chown` or `chgrp` yet, and build systems expect POSIX's, as
+#   the Peios package recipes run them. Any other root gets `/bin:/usr/bin`
+#   alone.
 import fs
 import unpack from archive
 import toolchain
@@ -99,8 +121,7 @@ def configure_make(
         return out
     }
     let placed: List<{at: String, place: Dir | File | FileSet}> = [
-        {at = "/"; place = env.root},
-        {at = "/"; place = cchain.runtime},
+        ...base(env, cchain.runtime),
         {at = OPT; place = cchain.root},
         {at = SRC_IN; place = src},
     ]
@@ -110,6 +131,22 @@ def configure_make(
                   && {deterministic(OUT)}"
     let ran = box.exec("/bin/sh", "-c", script)
     = box.dir(OUT)
+}
+
+def has_tools(root: Dir) -> Bool {
+    = fs.exists("{root.path}/bin/sh")
+}
+
+def base(env: BuildEnv, runtime: Dir) -> List<{at: String, place: Dir}> {
+    = if has_tools(runtime) { [{at = "/"; place = runtime}] } else { [{at = "/"; place = env.root}, {at = "/"; place = runtime}] }
+}
+
+def bin_path(runtime: Dir) -> String {
+    = if fs.exists("{runtime.path}/usr/libexec/coreutils-build") { "/usr/libexec/coreutils-build:/bin:/usr/bin" } else { "/bin:/usr/bin" }
+}
+
+def shell(env: BuildEnv, runtime: Dir) -> List<{at: String, place: Dir}> {
+    = if has_tools(runtime) { [] } else { [{at = "/bin"; place = env.root.dir("bin")}] }
 }
 
 # `words`, each quoted for the shell, joined by spaces: so that a word with
@@ -128,7 +165,7 @@ fn tools(cchain: toolchain.CToolchain, at: String) -> {*: String} {
     RANLIB = ranlib(placed(cchain.ar))
     OBJCOPY = objcopy(placed(cchain.ar))
     LD = placed(cchain.ld)
-    PATH = "/bin:/usr/bin:/sbin:/usr/sbin"
+    PATH = "{bin_path(cchain.runtime)}:/sbin:/usr/sbin"
     TMPDIR = "/tmp"
     HOME = "/tmp"
 }
