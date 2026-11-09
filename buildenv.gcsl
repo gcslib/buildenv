@@ -35,6 +35,21 @@
 #   again with tools, `automake` or `makeinfo`, the build was never meant
 #   to need. One time for every file makes each up to date, as it was
 #   released.
+# - `has_tools(root)`: whether the directory `root` has tools of its own:
+#   a shell at `bin/sh`, as a system's root does, one composed for a
+#   build from a distribution's packages say, and Bootlin's sysroot
+#   doesn't.
+# - `base(env, runtime)`: what a sandbox has at `/` for a build in the
+#   environment `env` that runs on `runtime`, a C toolchain's runtime: the
+#   runtime, and the environment's root over it, unless the runtime has
+#   tools of its own. Such a root has its own shell, `make`, `env` and the
+#   rest where the environment has its, so the two can't both be placed,
+#   and the build takes the root's: they are what its compiler was built
+#   with. `configure_make` uses it, and so should any rule that places an
+#   environment and a C toolchain together.
+# - `shell(env, runtime)`: the environment's `/bin`, its shell and the
+#   usual tools, placed at `/bin`, for a sandbox of `runtime` that needs
+#   only those, a test's say; none if the runtime has its own.
 import fs
 import unpack from archive
 import toolchain
@@ -99,8 +114,7 @@ def configure_make(
         return out
     }
     let placed: List<{at: String, place: Dir | File | FileSet}> = [
-        {at = "/"; place = env.root},
-        {at = "/"; place = cchain.runtime},
+        ...base(env, cchain.runtime),
         {at = OPT; place = cchain.root},
         {at = SRC_IN; place = src},
     ]
@@ -110,6 +124,18 @@ def configure_make(
                   && {deterministic(OUT)}"
     let ran = box.exec("/bin/sh", "-c", script)
     = box.dir(OUT)
+}
+
+def has_tools(root: Dir) -> Bool {
+    = fs.exists("{root.path}/bin/sh")
+}
+
+def base(env: BuildEnv, runtime: Dir) -> List<{at: String, place: Dir}> {
+    = if has_tools(runtime) { [{at = "/"; place = runtime}] } else { [{at = "/"; place = env.root}, {at = "/"; place = runtime}] }
+}
+
+def shell(env: BuildEnv, runtime: Dir) -> List<{at: String, place: Dir}> {
+    = if has_tools(runtime) { [] } else { [{at = "/bin"; place = env.root.dir("bin")}] }
 }
 
 # `words`, each quoted for the shell, joined by spaces: so that a word with
