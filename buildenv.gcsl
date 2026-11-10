@@ -38,7 +38,9 @@
 # - `has_tools(root)`: whether the directory `root` has tools of its own:
 #   a shell at `bin/sh`, as a system's root does, one composed for a
 #   build from a distribution's packages say, and Bootlin's sysroot
-#   doesn't.
+#   doesn't. The host's root, `/`, has, and is not looked in: a step's
+#   `fs.exists` sees only what the step is given, and pekit binds the
+#   host's system directories for a step's programs, not for its GCSL.
 # - `base(env, runtime)`: what a sandbox has at `/` for a build in the
 #   environment `env` that runs on `runtime`, a C toolchain's runtime: the
 #   runtime, and the environment's root over it, unless the runtime has
@@ -56,7 +58,8 @@
 #   to come first: Peios's own, peiosutils', differ from POSIX's and have no
 #   `chmod`, `chown` or `chgrp` yet, and build systems expect POSIX's, as
 #   the Peios package recipes run them. Any other root gets `/bin:/usr/bin`
-#   alone.
+#   alone, the host's root among them, which is not looked in, as
+#   `has_tools` says.
 import fs
 import unpack from archive
 import toolchain
@@ -134,7 +137,7 @@ def configure_make(
 }
 
 def has_tools(root: Dir) -> Bool {
-    = fs.exists("{root.path}/bin/sh")
+    = root.path == "/" or fs.exists(root.file("bin/sh").path)
 }
 
 def base(env: BuildEnv, runtime: Dir) -> List<{at: String, place: Dir}> {
@@ -142,7 +145,7 @@ def base(env: BuildEnv, runtime: Dir) -> List<{at: String, place: Dir}> {
 }
 
 def bin_path(runtime: Dir) -> String {
-    = if fs.exists("{runtime.path}/usr/libexec/coreutils-build") { "/usr/libexec/coreutils-build:/bin:/usr/bin" } else { "/bin:/usr/bin" }
+    = if runtime.path != "/" and fs.exists(runtime.dir("usr/libexec/coreutils-build").path) { "/usr/libexec/coreutils-build:/bin:/usr/bin" } else { "/bin:/usr/bin" }
 }
 
 def shell(env: BuildEnv, runtime: Dir) -> List<{at: String, place: Dir}> {

@@ -46,10 +46,11 @@ def build zlib() {
   at `/`, or at `/bin`, for a build or a test in the environment on a C
   toolchain's runtime. The environment is left out where the runtime has
   tools of its own, `has_tools(runtime)`, as a root composed from a
-  distribution's packages does.
+  distribution's packages does, and the host's root does.
 - `bin_path(runtime)`: the system's part of a sandbox's `PATH`, which puts
   a Peios build root's POSIX commands, `/usr/libexec/coreutils-build`,
-  before its own.
+  before its own. The host's root gets `/bin:/usr/bin`: a step cannot look
+  in it.
 
 It needs the [gcc](https://github.com/gcslib/gcc) library.
 
